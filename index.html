@@ -1,364 +1,213 @@
 <!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>P2P接続テスト</title>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Pickaxe Nailer</title>
 <style>
-:root{--bg:#101418;--pn:#1a2027;--tx:#dfe6ec;--dim:#8794a1;--ok:#5fd38d;--warn:#f2b84b;--ng:#ff6b6b;--ac:#6cb6ff}
-*{box-sizing:border-box}
-body{margin:0;padding:16px;background:var(--bg);color:var(--tx);font:15px/1.6 system-ui,"Hiragino Sans","Noto Sans JP",sans-serif;max-width:860px;margin-inline:auto}
-h1{font-size:22px;margin:0 0 4px}
-h2{font-size:16px;margin:0 0 8px;color:var(--ac)}
-h3{font-size:14px;margin:10px 0 4px}
-.dim{color:var(--dim)}
-section{background:var(--pn);border-radius:8px;padding:12px 14px;margin:12px 0}
-.row{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
-input{background:#0b0e11;color:var(--tx);border:1px solid #33404c;border-radius:6px;padding:8px 10px;font-size:15px;min-width:0}
-#room{flex:1 1 160px}#root{width:130px}
-button{background:#2a3744;color:var(--tx);border:1px solid #3d4d5c;border-radius:6px;padding:8px 14px;font-size:14px;cursor:pointer}
-button.main{background:var(--ac);color:#06121d;border-color:var(--ac);font-weight:700}
-button:disabled{opacity:.4;cursor:default}
-button:focus-visible,input:focus-visible{outline:2px solid var(--warn);outline-offset:2px}
-table{width:100%;border-collapse:collapse}
-th{width:34%;text-align:left;vertical-align:top;font-weight:400;color:var(--dim);padding:3px 8px 3px 0;font-size:13px}
-td{padding:3px 0;font:12.5px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-all}
-ul{list-style:none;margin:0;padding:0}
-li{padding:3px 0 3px 22px;position:relative}
-li::before{position:absolute;left:0}
-.ok{color:var(--ok)}.warn{color:var(--warn)}.ng{color:var(--ng)}.info{color:var(--tx)}
-li.ok::before{content:"✓"}li.warn::before{content:"⚠"}li.ng::before{content:"✗"}li.info::before{content:"・"}
-#log{height:240px;overflow:auto;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;background:#0b0e11;border-radius:6px;padding:8px}
-#log div{white-space:pre-wrap;word-break:break-all}
-.small{font-size:13px}
-</style>
-</head>
+html,body{margin:0;height:100%;background:#1b1209;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;font-family:"Trebuchet MS",system-ui,sans-serif}
+canvas{display:block;position:absolute;left:0;top:0;touch-action:none}
+.ov{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(24,12,2,.66);color:#fff;text-align:center;gap:16px}
+.ov.h{display:none}
+h1{margin:0;font-size:clamp(30px,7vw,64px);color:#ffd36b;text-shadow:0 4px 0 #6b3a10;letter-spacing:.02em}
+p{margin:0;font-size:clamp(14px,2.4vw,20px);max-width:min(560px,86%);line-height:1.5}
+button{font:700 clamp(18px,3vw,28px) "Trebuchet MS",system-ui,sans-serif;padding:.5em 1.8em;border:0;border-radius:999px;background:#ffb02e;color:#3a1c00;box-shadow:0 5px 0 #9a5a00;cursor:pointer}
+button:active{transform:translateY(3px);box-shadow:0 2px 0 #9a5a00}
+button:focus-visible{outline:3px solid #fff}
+#mute{position:absolute;right:10px;top:10px;font-size:20px;padding:.3em .7em;z-index:5}
+</style></head>
 <body>
-<h1>P2P接続テスト</h1>
-<p class="dim small">2台以上のブラウザで、同じ合言葉を入れて「接続する」を押します。先に入った人がホスト、後の人がゲストになります（ゲームと同じ星形接続）。接続の詳細と、つながらない原因の見立てを表示します。</p>
-
-<div class="row">
-  <input id="room" placeholder="合言葉（例: test1）" autocomplete="off">
-  <input id="root" value="p2ptest" title="Firebaseの保存先パス" aria-label="Firebaseの保存先パス">
-  <button id="go" class="main">接続する</button>
-  <button id="again" disabled>やり直し</button>
-</div>
-<div class="row">
-  <button id="srv">STUN/TURN単体テスト</button>
-  <button id="copy">結果をコピー</button>
-</div>
-
-<section><h2>診断</h2><ul id="diag"></ul></section>
-<section><h2>接続相手ごとの詳細</h2><div id="peers"></div></section>
-<section><h2>状態</h2><div id="status"></div></section>
-<section><h2>STUN/TURN単体テスト結果</h2><div class="dim small">各サーバーを1つずつ試し、応答があるかを調べます（接続しなくても使えます）。</div><div id="srvres"></div></section>
-<section><h2>環境</h2><div id="env"></div></section>
-<section><h2>ログ</h2><div id="log" aria-live="off"></div></section>
-
-<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-database-compat.js"></script>
+<canvas id="c"></canvas>
+<div class="ov" id="start"><h1>Pickaxe Nailer</h1><p id="desc"></p><button id="play"></button></div>
+<div class="ov h" id="clear"><h1 id="ct"></h1><p id="res"></p><button id="again"></button></div>
+<button id="mute" aria-label="Sound">🔊</button>
+<script src="https://game-cdn.poki.com/scripts/v2/poki-sdk.js"></script>
 <script>
-// ゲーム(werewolf.html)と同じFirebase設定・同じICEサーバー設定
-const FIREBASE_CONFIG={apiKey:"AIzaSyDslYy-jLIkZbd8jpr-9t9zmRD0fdsDwpI",authDomain:"zomikasudungeon.firebaseapp.com",databaseURL:"https://zomikasudungeon-default-rtdb.asia-southeast1.firebasedatabase.app",projectId:"zomikasudungeon",storageBucket:"zomikasudungeon.firebasestorage.app",messagingSenderId:"637820964372",appId:"1:637820964372:web:d6e7e0470ade987ffe6101"};
-const U='efbb50b419e72c3d78c12f99',C='KjZehIXmo2kC00Tb';
-const RTC_CONFIG={iceServers:[
- {urls:'stun:stun.relay.metered.ca:80'},
- {urls:'turn:global.relay.metered.ca:80',username:U,credential:C},
- {urls:'turn:global.relay.metered.ca:80?transport=tcp',username:U,credential:C},
- {urls:'turn:global.relay.metered.ca:443',username:U,credential:C},
- {urls:'turns:global.relay.metered.ca:443?transport=tcp',username:U,credential:C}]};
+// ---------- Poki SDK (falls back to a stub when not on Poki / offline) ----------
+const P=window.PokiSDK||{init:()=>Promise.resolve(),gameLoadingFinished(){},gameplayStart(){},gameplayStop(){},commercialBreak:(cb)=>{cb&&cb();return Promise.resolve()},happyTime(){},setDebug(){}};
+let userMute=false,adMute=false;
+P.init().catch(()=>{}).then(()=>{try{P.gameLoadingFinished()}catch(e){}});
 
+// ---------- Text ----------
+const ja=/^ja/.test(navigator.language);
+const T=ja?{desc:'ハンマーをドラッグして、釘に振り下ろそう。勢いが強いほど深く刺さる。でも面を斜めに当てると釘が曲がってしまう！',play:'あそぶ',hint:'ハンマーをドラッグして振り下ろそう！',clear:'クリア！',again:'もう一回',nails:'釘',time:'タイム',hits:'打数',perfect:'パーフェクト！',bent:'曲がった！'}
+:{desc:'Drag the hammer and swing it down on the nails. The harder you hit, the deeper they go — but hit with a tilted face and the nail bends!',play:'Play',hint:'Drag the hammer, then swing it down!',clear:'Cleared!',again:'Play again',nails:'Nails',time:'Time',hits:'Swings',perfect:'PERFECT!',bent:'BENT!'};
 const $=id=>document.getElementById(id);
-const E=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const now=()=>performance.now();
-const ms=n=>n==null||isNaN(n)?'-':Math.round(n)+'ms';
-let S,tStart=now(),db=null,base=null,refs=[],logs=[];
-function fresh(){S={peers:new Map(),issues:[],role:'-',uid:null,hostUid:null,fb:{},running:false,srv:null,root:'p2ptest'};}
-fresh();
+Object.assign(T,ja?{desc:'ピッケルを掴んで振り、丸太の釘を打ち込もう。勢いが強いほど深く刺さる。判定は両端の黄色い先端の一点だけ。まっすぐ突き立てるのがコツ。斜めに当てると刺さりにくくなる！',hint:'ピッケルをドラッグして、釘に振り下ろそう！'}:{desc:'Grab the pickaxe and swing it to drive the nails into the log. Harder hits sink them deeper. Only the yellow pick tips count — hit squarely with one — a tilted hit sinks the nail less!',hint:'Drag the pickaxe, then swing it down on the nails!'});$('desc').textContent=T.desc;$('play').textContent=T.play;$('ct').textContent=T.clear;$('again').textContent=T.again;
 
-function log(m,cls){const t=((now()-tStart)/1000).toFixed(2).padStart(6);const line=`[${t}s] ${m}`;logs.push(line);const d=document.createElement('div');d.textContent=line;if(cls)d.className=cls;const L=$('log');L.appendChild(d);L.scrollTop=L.scrollHeight;}
-function issue(lv,text){if(!S.issues.some(i=>i.text===text))S.issues.push({lv,text});log(text,lv);}
-const HINT={701:'サーバーに到達できません（ポート遮断/UDP制限/サーバー停止）',401:'認証失敗（TURNのユーザー名・パスワードが無効か期限切れ）',403:'権限エラー',437:'割り当て不一致',438:'nonce期限切れ',486:'割り当て上限超過（無料枠や同時接続数の上限の可能性）',508:'割り当て不足'};
-function fbErr(w,e){const c=e&&(e.code||e.message)||String(e);let h='';
- if(/permission/i.test(c))h=` → Firebaseのルールで拒否されました。ルールに "${S.root}":{".read":"auth != null",".write":"auth != null"} を追加するか、左上の保存先パスをゲームが許可している rooms/ 配下に変えると通る場合があります`;
- else if(/unauthorized-domain/.test(c))h=' → このページのドメインがFirebaseの承認済みドメインにありません。ゲームと同じ場所に置くか、Authentication→設定→承認済みドメインに追加してください';
- else if(/operation-not-allowed|admin-restricted/.test(c))h=' → Firebase Authenticationで「匿名」ログインが無効です';
- else if(/network/i.test(c))h=' → Firebaseの認証サーバーへ通信できません（回線やブロックの可能性）';
- issue('ng',`${w}に失敗: ${c}${h}`);}
-const nm=P=>P.role==='host'?'ホスト':'ゲスト'+P.uid.slice(0,4);
-function parseCand(s){const a=String(s).split(' ');return{proto:a[2],addr:a[4],port:a[5],type:a[7]};}
+// ---------- Canvas ----------
+const W=854,H=480,GY=333,NS=3,LX=758,PX=W+800,PY=60,HX=862,HY=-250,Z=.5,VW=W/Z,VH=H/Z,VX0=-100,VY0=-560;
+const cv=$('c'),g=cv.getContext('2d');
+let sc=1,ox=0,oy=0,dpr=1;
+function fit(){dpr=devicePixelRatio||1;cv.width=innerWidth*dpr;cv.height=innerHeight*dpr;cv.style.width=innerWidth+'px';cv.style.height=innerHeight+'px';sc=Math.min(cv.width/VW,cv.height/VH);ox=(cv.width-VW*sc)/2;oy=(cv.height-VH*sc)/2}
+addEventListener('resize',fit);fit();
 
-function setBtns(){$('go').disabled=S.running;$('again').disabled=!S.role||S.role==='-';}
+// ---------- Audio ----------
+let ac;const lastS={};
+function AC(){if(!ac){try{ac=new(window.AudioContext||window.webkitAudioContext)()}catch(e){}}if(ac&&ac.state==='suspended')ac.resume();return ac}
+function snd(k,f,d,type,v,sl){const now=performance.now();if(userMute||adMute||now-(lastS[k]||0)<70)return;lastS[k]=now;const a=AC();if(!a)return;const o=a.createOscillator(),n=a.createGain(),t=a.currentTime;o.type=type;o.frequency.setValueAtTime(f,t);if(sl)o.frequency.exponentialRampToValueAtTime(sl,t+d);n.gain.setValueAtTime(v,t);n.gain.exponentialRampToValueAtTime(.001,t+d);o.connect(n);n.connect(a.destination);o.start(t);o.stop(t+d)}
+$('mute').onclick=()=>{userMute=!userMute;$('mute').textContent=userMute?'🔇':'🔊'};
 
-async function start(){
- if(S.running)return;
- const room=$('room').value.trim();if(!room){$('room').focus();return;}
- const root=($('root').value.trim()||'p2ptest').replace(/^\/+|\/+$/g,'');
- const keepSrv=S.srv;fresh();S.srv=keepSrv;S.root=root;logs.length=0;$('log').innerHTML='';tStart=now();S.running=true;setBtns();
- log(`開始: 合言葉="${room}" 保存先=${root}`);
- if(typeof RTCPeerConnection==='undefined'){issue('ng','このブラウザはWebRTC(RTCPeerConnection)が使えません');return fin();}
- if(typeof firebase==='undefined'){issue('ng','Firebase SDKを読み込めませんでした。gstatic.com に届かない環境です（この状態ではゲームの協力プレイも使えません）');return fin();}
- try{
-  if(!firebase.apps.length)firebase.initializeApp(FIREBASE_CONFIG);
-  db=firebase.database();
-  let t=now();
-  await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.NONE).catch(()=>{});
-  const cred=await firebase.auth().signInAnonymously();
-  S.uid=cred.user.uid;S.fb.auth=now()-t;
-  log(`匿名ログイン成功 (${ms(S.fb.auth)}) uid=${S.uid.slice(0,6)}…`,'ok');
- }catch(e){fbErr('匿名ログイン',e);return fin();}
- const ir=db.ref('.info/connected');const ih=ir.on('value',s=>{S.fb.conn=s.val();log('Firebase接続: '+(s.val()?'接続中':'切断'),s.val()?'':'warn');});
- refs.push(()=>ir.off('value',ih));
- base=db.ref(`${root}/${room.replace(/[.#$\[\]\/]/g,'_')}`);
- try{
-  let t=now();await base.child('ping/'+S.uid).set(firebase.database.ServerValue.TIMESTAMP);S.fb.write=now()-t;
-  t=now();await base.child('ping/'+S.uid).once('value');S.fb.read=now()-t;
-  log(`Firebase書込 ${ms(S.fb.write)} / 読込 ${ms(S.fb.read)}`);
-  base.child('ping/'+S.uid).onDisconnect().remove();
- }catch(e){fbErr('Firebaseへの書き込み',e);return fin();}
- let tr;
- try{tr=await base.child('host').transaction(cur=>cur?undefined:{uid:S.uid,ts:Date.now(),ready:false});}
- catch(e){fbErr('ホスト決定',e);return fin();}
- if(tr.committed){
-  S.role='host';S.hostUid=S.uid;setBtns();
-  base.child('host').onDisconnect().remove();
-  await base.update({offers:null,answers:null,candidates:null});
-  await base.child('host/ready').set(true);
-  log('あなたはホストです。ゲストの接続を待っています…','ok');
-  const r=base.child('offers'),f=s=>onOffer(s);
-  r.on('child_added',f);r.on('child_changed',f);refs.push(()=>{r.off('child_added',f);r.off('child_changed',f);});
- }else{
-  S.role='guest';setBtns();
-  log('あなたはゲストです。ホストの準備を待っています…','ok');
-  const hr=base.child('host');
-  const f=s=>{const v=s.val();
-   if(!v){if(S.hostUid)log('ホストの登録が消えました（ホストが離脱）','warn');return;}
-   if(!v.ready||S.hostUid===v.uid)return;
-   S.hostUid=v.uid;connectToHost(v.uid).catch(e=>issue('ng','ゲスト側の接続処理に失敗: '+e.message));};
-  hr.on('value',f);refs.push(()=>hr.off('value',f));
- }
+// ---------- Game state ----------
+const S=3,VMIN=700,DK=30,DMAX=60*NS,M=1,I=22000*S*S,KA=1800000*S*S,KW=185000*S*S,GR=1500,DT=1/480,KP=45,KD=8,FMAX=7000;
+// local collision points: [x,y,radius]  (handle runs along local x, head faces are local ±y)
+// kind: 0 = handle/side, 1 = flat face (adze), 2 = pick tip
+const PTS=[];for(let x=-77*S;x<=387*S;x+=22)PTS.push([x,0,8*S,0]);
+for(let y=-60*S;y<=60*S;y+=30)PTS.push([-83*S,y,11*S,0]);
+PTS.push([-78*S,114*S,0,2],[-78*S,-114*S,0,2]);
+let hm,nails,parts,texts,shake,t,hits,hint,grab,frozen,state='menu';
+const mouse={x:0,y:0};
+function reset(){
+  hm={x:HX,y:HY,a:Math.atan2(PY-HY,PX-HX),vx:0,vy:0,w:0};frozen=true;
+  nails=[[518,84*NS]].map(a=>({x:a[0],h:a[1],bent:0,done:false}));
+  parts=[];texts=[];shake=0;t=0;hits=0;hint=true;grab=null;
 }
-function fin(){S.running=false;setBtns();}
+reset();
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const wrapA=x=>((x+Math.PI)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)-Math.PI;
+function wp(p){const c=Math.cos(hm.a),s=Math.sin(hm.a),rx=c*p[0]-s*p[1],ry=s*p[0]+c*p[1];return[hm.x+rx,hm.y+ry,rx,ry]}
+function surf(x,tp){if(tp)for(const n of nails)if(!n.done&&Math.abs(x-n.x)<11*NS)return[GY-n.h,n];return[x<=LX?GY:1e9,null]}
+function burst(x,y,n,col,sp){for(let i=0;i<n;i++){const a=-Math.PI*Math.random();parts.push({x,y,vx:Math.cos(a)*sp*Math.random(),vy:Math.sin(a)*sp*Math.random(),l:.5+Math.random()*.4,c:col})}}
+function say(x,y,s,c){texts.push({x,y,s,c,l:1})}
 
-async function stop(){
- refs.forEach(f=>{try{f()}catch(e){}});refs=[];
- const wasHost=S.role==='host';
- S.peers.forEach(closePeer);
- try{if(wasHost&&base){await base.child('host').remove();await base.update({offers:null,answers:null,candidates:null});}
-  if(base&&S.uid)await base.child('ping/'+S.uid).remove();}catch(e){}
- const s=S.srv;fresh();S.srv=s;setBtns();
-}
-function closePeer(P){clearInterval(P.ping);clearInterval(P.poll);P.off.forEach(f=>{try{f()}catch(e){}});try{P.pc&&P.pc.close()}catch(e){}}
-
-function newPeer(uid,role,gen){
- const old=S.peers.get(uid);if(old)closePeer(old);
- const P={uid,role,gen,pc:null,dc:null,local:[],remote:[],errors:[],st:{},gather:'new',tCreate:now(),tConn:null,tDc:null,rtts:[],sent:0,got:0,pair:null,pairs:null,timeout:false,q:[],off:[],ping:null,poll:null};
- S.peers.set(uid,P);
- P.failTimer=setTimeout(()=>{if(!P.tConn){P.timeout=true;log(`15秒以内に接続できませんでした (${nm(P)})`,'ng');}},15000);
- P.off.push(()=>clearTimeout(P.failTimer));
- return P;
-}
-function wirePc(P,pushRef){
- const pc=P.pc=new RTCPeerConnection(RTC_CONFIG);
- pc.onicecandidate=e=>{
-  if(!e.candidate){log(`ICE候補の収集が完了 (${nm(P)})`);return;}
-  const c=e.candidate,p=parseCand(c.candidate);
-  const r={type:c.type||p.type,proto:c.protocol||p.proto,addr:c.address||p.addr,port:c.port||p.port,url:e.url||'',tcp:c.tcpType||''};
-  P.local.push(r);log(`自分の候補: ${r.type} ${r.proto} ${r.addr}:${r.port} ${r.url?'['+r.url+']':''}`);
-  pushRef.push(c.toJSON()).catch(err=>fbErr('ICE候補のFirebase書き込み',err));
- };
- pc.onicegatheringstatechange=()=>{P.gather=pc.iceGatheringState;log(`iceGatheringState=${P.gather}`);};
- pc.onicecandidateerror=e=>{P.errors.push({code:e.errorCode,text:e.errorText,url:e.url,addr:e.address,port:e.port});log(`ICEエラー ${e.errorCode} ${e.errorText||''} url=${e.url||'-'} (${HINT[e.errorCode]||'不明'})`,'ng');};
- pc.onsignalingstatechange=()=>{P.st.sig=pc.signalingState;log(`signalingState=${pc.signalingState}`);};
- pc.oniceconnectionstatechange=()=>{P.st.ice=pc.iceConnectionState;log(`iceConnectionState=${pc.iceConnectionState}`,pc.iceConnectionState==='failed'?'ng':'');};
- pc.onconnectionstatechange=()=>{
-  P.st.conn=pc.connectionState;log(`connectionState=${pc.connectionState} (${nm(P)})`,pc.connectionState==='failed'?'ng':(pc.connectionState==='connected'?'ok':''));
-  if(pc.connectionState==='connected'&&!P.tConn){P.tConn=now();log(`接続完了 (開始から ${ms(P.tConn-P.tCreate)})`,'ok');P.poll=setInterval(()=>pollStats(P),1000);pollStats(P);}
- };
- return pc;
-}
-function addRemote(P,c){
- if(!c)return;const p=parseCand(c.candidate||'');P.remote.push({type:p.type,proto:p.proto,addr:p.addr,port:p.port});
- if(!P.pc.remoteDescription){P.q.push(c);return;}
- P.pc.addIceCandidate(c).catch(e=>log('addIceCandidate失敗: '+e.message,'warn'));
-}
-function flushQ(P){P.q.splice(0).forEach(c=>P.pc.addIceCandidate(c).catch(e=>log('addIceCandidate失敗: '+e.message,'warn')));}
-function listen(P,ref,ev,fn){ref.on(ev,fn);P.off.push(()=>ref.off(ev,fn));}
-function setupDc(P,dc){
- P.dc=dc;
- dc.onopen=()=>{P.tDc=now();log(`DataChannel open (${nm(P)}) 開始から ${ms(P.tDc-P.tCreate)}`,'ok');
-  P.ping=setInterval(()=>{if(dc.readyState!=='open')return;P.sent++;try{dc.send(JSON.stringify({k:'p',i:P.sent,t:now()}))}catch(e){}},1000);};
- dc.onclose=()=>log(`DataChannel close (${nm(P)})`,'warn');
- dc.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch(x){return}
-  if(m.k==='p'){try{dc.send(JSON.stringify({k:'q',i:m.i,t:m.t}))}catch(x){}}
-  else if(m.k==='q'){P.got++;P.rtts.push(now()-m.t);if(P.rtts.length>60)P.rtts.shift();}};
-}
-
-// ホスト側：ゲストのofferを受けてanswerを返す
-function onOffer(s){
- const v=s.val(),gu=s.key;if(!v||!v.gen)return;
- const old=S.peers.get(gu);if(old&&old.gen===v.gen)return;
- hostAccept(gu,v).catch(e=>issue('ng','ホスト側のオファー処理に失敗: '+e.message));
-}
-async function hostAccept(gu,offer){
- const gen=offer.gen,P=newPeer(gu,'guest',gen);
- log(`ゲスト ${gu.slice(0,4)} のofferを受信`);
- const pc=wirePc(P,base.child(`candidates/${gu}/host/${gen}`));
- pc.ondatachannel=e=>setupDc(P,e.channel);
- await pc.setRemoteDescription({type:offer.type,sdp:offer.sdp});
- flushQ(P);
- await pc.setLocalDescription(await pc.createAnswer());
- await base.child(`answers/${gu}/${gen}`).set({type:pc.localDescription.type,sdp:pc.localDescription.sdp});
- log('answerを送信');
- listen(P,base.child(`candidates/${gu}/guest/${gen}`),'child_added',s=>addRemote(P,s.val()));
-}
-// ゲスト側：ホストへofferを送る
-async function connectToHost(hu){
- const gen=Date.now(),P=newPeer(hu,'host',gen);
- log('ホストへ接続開始');
- const pc=wirePc(P,base.child(`candidates/${S.uid}/guest/${gen}`));
- setupDc(P,pc.createDataChannel('t',{ordered:false,maxRetransmits:0}));
- await pc.setLocalDescription(await pc.createOffer());
- await base.child(`offers/${S.uid}`).set({type:pc.localDescription.type,sdp:pc.localDescription.sdp,gen,ts:firebase.database.ServerValue.TIMESTAMP});
- log('offerを送信');
- let got=false;
- listen(P,base.child(`answers/${S.uid}/${gen}`),'value',async s=>{
-  const v=s.val();if(!v||got)return;got=true;log('answerを受信');
-  try{await pc.setRemoteDescription({type:v.type,sdp:v.sdp});flushQ(P);}catch(e){issue('ng','answerの適用に失敗: '+e.message);return;}
-  listen(P,base.child(`candidates/${S.uid}/host/${gen}`),'child_added',s2=>addRemote(P,s2.val()));
- });
-}
-
-const cdesc=c=>c?`${c.candidateType} ${c.protocol} ${c.address||c.ip||'?'}:${c.port}${c.relayProtocol?' (中継:'+c.relayProtocol+')':''}`:'?';
-async function pollStats(P){
- try{
-  const st=await P.pc.getStats(),by={};let pid=null,pair=null;const cnt={};
-  st.forEach(r=>{by[r.id]=r;if(r.type==='transport'&&r.selectedCandidatePairId)pid=r.selectedCandidatePairId;if(r.type==='candidate-pair')cnt[r.state]=(cnt[r.state]||0)+1;});
-  pair=pid?by[pid]:null;
-  if(!pair)st.forEach(r=>{if(r.type==='candidate-pair'&&(r.selected||(r.nominated&&r.state==='succeeded')))pair=r;});
-  P.pairs=cnt;
-  if(pair)P.pair={l:cdesc(by[pair.localCandidateId]),r:cdesc(by[pair.remoteCandidateId]),rtt:pair.currentRoundTripTime,out:pair.availableOutgoingBitrate,bs:pair.bytesSent,br:pair.bytesReceived};
- }catch(e){}
-}
-
-const cntBy=(a,k)=>a.reduce((o,x)=>(o[x[k]]=(o[x[k]]||0)+1,o),{});
-const fmtCnt=o=>Object.keys(o).length?Object.entries(o).map(([k,v])=>`${k} ${v}`).join(' / '):'なし';
-function rttStat(P){if(!P.rtts.length)return null;const a=P.rtts,sum=a.reduce((x,y)=>x+y,0);return{last:a[a.length-1],avg:sum/a.length,min:Math.min(...a),max:Math.max(...a)};}
-function lossPct(P){const n=P.sent-1;return n>=3?Math.max(0,n-P.got)/n*100:null;}
-const relayed=P=>P.pair&&/relay/.test(P.pair.l+' '+P.pair.r);
-
-function diagnose(){
- const out=[...S.issues];const add=(lv,t)=>out.push({lv,text:t});
- for(const P of S.peers.values()){
-  const n=`[${nm(P)}] `,c=cntBy(P.local,'type'),done=P.gather==='complete',age=(now()-P.tCreate)/1000;
-  if(done&&!P.local.length)add('ng',n+'自分側のICE候補が1つもできていません。ブラウザの設定・拡張機能・組織のポリシーでWebRTCが止められている可能性があります');
-  else if(done&&!c.srflx&&!c.relay)add('ng',n+'STUNにもTURNにも応答がありません。外向きのUDP/TCPが広く遮断されているか、サーバーへ届いていません（下の単体テストで確認）');
-  else{
-   if(done&&!c.srflx)add('warn',n+'STUNの応答なし。UDPが遮断されている可能性（グローバルIPを知れないため直接接続は期待できません）');
-   if(done&&!c.relay)add('warn',n+'TURN（中継）候補ができていません。認証情報の失効・無料枠超過・ポート遮断の可能性。単体テストで原因のサーバーを特定できます');
+function step(dt){
+  if(frozen)return;
+  hm.vy+=GR*dt;
+  if(grab){ // pull the grabbed point toward the cursor with a limited spring force
+    const c=Math.cos(hm.a),s=Math.sin(hm.a),rx=c*grab[0]-s*grab[1],ry=s*grab[0]+c*grab[1];
+    const vx=hm.vx-hm.w*ry,vy=hm.vy+hm.w*rx;
+    let fx=KP*(mouse.x-(hm.x+rx))-KD*vx,fy=KP*(mouse.y-(hm.y+ry))-KD*vy;
+    const f=Math.hypot(fx,fy);if(f>FMAX){fx*=FMAX/f;fy*=FMAX/f}
+    hm.vx+=fx/M*dt;hm.vy+=fy/M*dt;hm.w+=(rx*fy-ry*fx)/I*dt;
   }
-  const ec={};P.errors.forEach(e=>{ec[e.code]=(ec[e.code]||0)+1;});
-  for(const k in ec)add('ng',`${n}ICEエラー ${k} ×${ec[k]}：${HINT[k]||'詳細不明'}`);
-  if(!P.local.length||!P.local.some(x=>!/\.local$/.test(x.addr||'')))if(P.local.length&&!c.srflx&&!c.relay)add('info',n+'自分のホスト候補はmDNS名(.local)のみです。同じLAN内でも相手が名前解決できないと直結できません');
-  if(!P.tConn&&P.remote.length===0&&age>6)add('ng',n+'相手のICE候補が届いていません。Firebase経由の受け渡しが止まっているか、相手が接続処理に失敗しています');
-  if(P.st.conn==='connected')add(relayed(P)?'warn':'ok',n+(relayed(P)?'接続成功（TURN中継経由）。直接つながらない回線ですが、実用上は通信できています。遅延は増えます':'接続成功（直接P2P）'));
-  else if(P.st.conn==='failed')add('ng',n+'接続失敗（ICE failed）。両側のNAT/ファイアウォールで直接接続できず、TURN中継も使えなかった状態です');
-  else if(P.timeout)add('ng',n+'15秒以内に接続できませんでした（ゲーム側でも「接続できませんでした」が出る状態）');
-  if(P.st.conn==='disconnected')add('warn',n+'接続が一時的に切れています');
-  if(P.tConn&&!P.tDc&&(now()-P.tConn)>3000)add('warn',n+'接続済みなのにDataChannelが開きません');
-  const r=rttStat(P),lp=lossPct(P);
-  if(r&&r.avg>300)add('warn',`${n}往復遅延が大きい（平均 ${ms(r.avg)}）`);
-  if(lp!=null&&lp>10)add('warn',`${n}パケット損失が多い（約${lp.toFixed(0)}%）`);
- }
- if(S.role==='host'&&S.peers.size===0)add('info','ゲストの接続を待っています。別の端末で同じ合言葉を入れてください');
- if(S.role==='guest'&&S.peers.size===0&&S.running)add('info','ホストの準備を待っています');
- return out;
+  {const da=wrapA(Math.atan2(PY-hm.y,PX-hm.x)-hm.a);hm.w+=(KA*da-KW*hm.w)/I*dt} // handle is pulled to point at a far point on the right
+  hm.w*=1-1.2*dt;hm.vx*=1-.15*dt;hm.w=clamp(hm.w,-40,40);
+  hm.x+=hm.vx*dt;hm.y+=hm.vy*dt;hm.a+=hm.w*dt;
+  let maxPen=0;
+  for(const p of PTS){
+    const[X,Y,rx,ry]=wp(p),[sy,n]=surf(X,p[3]==2),pen=Y+p[2]-sy;
+    if(X<LX&&X>LX-30*NS&&Y>GY+10&&Y<GY+150*NS&&hm.vx<0){hm.x+=LX-X;hm.vx*=-.1;continue}
+    if(pen<=0||pen>60)continue;
+    maxPen=Math.max(maxPen,pen);
+    const vy=hm.vy+hm.w*rx;
+    if(vy<=0)continue;
+    const j=(1+(n?.1:.25))*vy/(1/M+rx*rx/I);
+    hm.vy-=j/M;hm.w-=rx*j/I;
+    const vt=hm.vx-hm.w*ry,jt=clamp(-vt/(1/M+ry*ry/I),-.6*j,.6*j);
+    hm.vx+=jt/M;hm.w-=ry*jt/I;
+    if(n&&vy>VMIN){
+      // flatness of the hitting surface: 1 = face parallel to the nail head
+      const tl=Math.abs(wrapA(hm.a-(p[1]<0?Math.PI:0))),fl=Math.cos(tl*1.6);
+      let eff=clamp((fl-.5)/.5,.12,1);
+      
+      
+      const d=Math.min(DMAX,DK*eff*NS*((vy-VMIN)/500)**2);
+      n.h-=d;hits++;hint=false;
+      if(eff>.9&&vy>1300)say(n.x,sy-40,T.perfect,'#ffe27a');
+      shake=Math.max(shake,Math.min(14,vy/130));
+      burst(n.x,sy,Math.min(14,4+vy/200|0),'#d9d9e0',Math.min(500,vy/3));
+      snd('n',1500+Math.min(1500,vy),.14,'triangle',.28,700);snd('nl',180,.1,'square',.18,60);
+      if(n.h<=4*NS){n.h=4*NS;n.done=true;snd('d',520,.25,'sine',.25,1040);if(nails.every(q=>q.done))win()}
+    }else if(!n&&vy>250){
+      shake=Math.max(shake,Math.min(8,vy/250));burst(X,GY,5,'#c98a4b',260);snd('g',120,.14,'sine',Math.min(.4,vy/1500),50);
+    }
+  }
+  hm.y-=maxPen;
+  if(hm.x<-200){hm.x=-200;hm.vx=Math.abs(hm.vx)*.3}
+  if(hm.x>W+900){hm.x=W+900;hm.vx=-Math.abs(hm.vx)*.3}
+  
+  if(hm.y>H+700){hm.x=HX;hm.y=HY;hm.a=Math.atan2(PY-HY,PX-HX);hm.vx=hm.vy=hm.w=0;frozen=true;grab=null}
 }
-function peerRows(P){
- const c=cntBy(P.local,'type'),rc=cntBy(P.remote,'type'),r=rttStat(P),lp=lossPct(P);
- const rows=[
-  ['接続状態',`connection=${P.st.conn||'-'} / ice=${P.st.ice||'-'} / signaling=${P.st.sig||'-'} / 収集=${P.gather}`,P.st.conn==='connected'?'ok':(P.st.conn==='failed'?'ng':'')],
-  ['接続までの時間',P.tConn?ms(P.tConn-P.tCreate):`未接続 (${((now()-P.tCreate)/1000).toFixed(1)}秒経過)`],
-  ['DataChannel',P.dc?P.dc.readyState+(P.tDc?` (${ms(P.tDc-P.tCreate)})`:''):'-'],
-  ['選ばれた経路',P.pair?`自分 ${P.pair.l}\n相手 ${P.pair.r}\n→ ${relayed(P)?'TURN中継':'直接'}`:'-'],
-  ['候補ペア',P.pairs?fmtCnt(P.pairs):'-'],
-  ['自分の候補',fmtCnt(c)+(P.local.length?'\n'+P.local.map(x=>`${x.type} ${x.proto} ${x.addr}:${x.port}${x.url?' ['+x.url+']':''}`).join('\n'):'')],
-  ['相手の候補',fmtCnt(rc)+(P.remote.length?'\n'+P.remote.map(x=>`${x.type} ${x.proto} ${x.addr}:${x.port}`).join('\n'):'')],
-  ['ICEエラー',P.errors.length?P.errors.map(e=>`${e.code} ${e.text||''} ${e.url||''}`).join('\n'):'なし',P.errors.length?'ng':''],
-  ['往復遅延(DC)',r?`最新 ${ms(r.last)} / 平均 ${ms(r.avg)} / 最小 ${ms(r.min)} / 最大 ${ms(r.max)}`:'-'],
-  ['ping送信/応答',`${P.sent} / ${P.got}`+(lp!=null?` (損失 約${lp.toFixed(0)}%)`:'')],
-  ['通信量',P.pair?`送信 ${P.pair.bs||0}B / 受信 ${P.pair.br||0}B / 推定上り ${P.pair.out?Math.round(P.pair.out/1000)+'kbps':'-'}`:'-']
- ];
- return rows;
-}
-function envRows(){
- const k=navigator.connection;
- return[['ブラウザ',navigator.userAgent],['オンライン',navigator.onLine?'はい':'いいえ'],
-  ['回線情報',k?`${k.type||'-'} / ${k.effectiveType||'-'} / ${k.downlink||'-'}Mbps / rtt ${k.rtt||'-'}ms${k.saveData?' / データセーバーON':''}`:'取得不可'],
-  ['ページの場所',location.protocol+'//'+(location.host||'(file)')],
-  ['WebRTC',typeof RTCPeerConnection!=='undefined'?'使えます':'使えません'],
-  ['Firebase SDK',typeof firebase!=='undefined'?'読み込み済み':'未読込'],
-  ['ICEサーバー',RTC_CONFIG.iceServers.map(s=>s.urls).join('\n')]];
-}
-function statusRows(){
- const f=S.fb;
- return[['役割',S.role==='host'?'ホスト':S.role==='guest'?'ゲスト':'-'],['自分のID',S.uid||'-'],['ホストのID',S.hostUid||'-'],
-  ['匿名ログイン',f.auth!=null?ms(f.auth):'-'],['Firebase接続',f.conn==null?'-':(f.conn?'接続中':'切断')],
-  ['Firebase書込/読込',f.write!=null?`${ms(f.write)} / ${ms(f.read)}`:'-'],['経過',S.role!=='-'?((now()-tStart)/1000).toFixed(1)+'秒':'-']];
-}
-const table=rows=>'<table>'+rows.map(([k,v,c])=>`<tr><th>${E(k)}</th><td class="${c||''}">${E(v)}</td></tr>`).join('')+'</table>';
-function render(){
- $('env').innerHTML=table(envRows());
- $('status').innerHTML=table(statusRows());
- $('diag').innerHTML=diagnose().map(i=>`<li class="${i.lv}">${E(i.text)}</li>`).join('')||'<li class="info">接続するとここに診断結果が出ます</li>';
- $('peers').innerHTML=[...S.peers.values()].map(P=>`<h3>相手: ${E(nm(P))}</h3>`+table(peerRows(P))).join('')||'<p class="dim small">まだ接続相手がいません</p>';
- $('srvres').innerHTML=S.srv?table(S.srv.map(r=>[r.url,r.txt,r.cls])):'';
-}
-setInterval(render,500);render();
 
-async function testServer(s){
- const res={cands:{},errors:[],ms:null};
- const pc=new RTCPeerConnection({iceServers:[s]});pc.createDataChannel('x');
- const t=now();let done;const p=new Promise(r=>{done=r;});
- pc.onicecandidate=e=>{if(!e.candidate){done();return;}const ty=e.candidate.type;if(ty==='srflx'||ty==='relay'){res.cands[ty]=(res.cands[ty]||0)+1;if(res.ms==null)res.ms=now()-t;}};
- pc.onicecandidateerror=e=>res.errors.push(`${e.errorCode} ${e.errorText||''} ${HINT[e.errorCode]?'→'+HINT[e.errorCode]:''}`);
- await pc.setLocalDescription(await pc.createOffer());
- const to=setTimeout(done,8000);await p;clearTimeout(to);pc.close();return res;
+// ---------- Flow ----------
+function win(){
+  state='clear';grab=null;
+  try{P.gameplayStop();P.happyTime(1)}catch(e){}
+  $('res').textContent=`${T.time}: ${t.toFixed(1)}s  /  ${T.hits}: ${hits}`;
+  $('clear').classList.remove('h');
+  [523,659,784,1047].forEach((f,i)=>setTimeout(()=>snd('w'+i,f,.3,'triangle',.25),i*120));
 }
-async function testServers(){
- if(typeof RTCPeerConnection==='undefined')return;
- $('srv').disabled=true;S.srv=[];
- for(const s of RTC_CONFIG.iceServers){
-  const row={url:s.urls,txt:'テスト中…（最大8秒）'};S.srv.push(row);
-  const r=await testServer(s),want=/^turns?:/.test(s.urls)?'relay':'srflx',ok=!!r.cands[want];
-  row.cls=ok?'ok':'ng';
-  row.txt=(ok?'✓ 成功 ':'✗ 失敗 ')+`(${ms(r.ms)}) 取得: ${JSON.stringify(r.cands)}`+(r.errors.length?'\nエラー: '+[...new Set(r.errors)].join(' / '):'')+(!ok&&!r.errors.length?'\n応答なし（ポートが遮断されている可能性）':'');
- }
- $('srv').disabled=false;
+function begin(){reset();state='play';$('start').classList.add('h');$('clear').classList.add('h');try{P.gameplayStart()}catch(e){}}
+$('play').onclick=()=>{AC();begin()};
+$('again').onclick=()=>{
+  AC();$('clear').classList.add('h');
+  let p;try{p=P.commercialBreak(()=>{adMute=true})}catch(e){}
+  Promise.resolve(p).catch(()=>{}).then(()=>{adMute=false;begin()});
+};
+
+// ---------- Input ----------
+function pos(e){return{x:(e.clientX*dpr-ox)/sc+VX0,y:(e.clientY*dpr-oy)/sc+VY0}}
+cv.addEventListener('pointerdown',e=>{
+  const m=pos(e);mouse.x=m.x;mouse.y=m.y;
+  if(state!=='play')return;
+  const c=Math.cos(hm.a),s=Math.sin(hm.a),dx=m.x-hm.x,dy=m.y-hm.y,lx=c*dx+s*dy,ly=-s*dx+c*dy;
+  const gx=clamp(lx,-100*S,387*S),gy=gx<-60*S?clamp(ly,-114*S,114*S):clamp(ly,-8*S,8*S);
+  if(Math.hypot(lx-gx,ly-gy)<90){frozen=false;grab=[gx,gy];cv.setPointerCapture(e.pointerId)}
+});
+cv.addEventListener('pointermove',e=>{const m=pos(e);mouse.x=m.x;mouse.y=m.y});
+['pointerup','pointercancel'].forEach(ev=>cv.addEventListener(ev,()=>{grab=null}));
+addEventListener('keydown',e=>{if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault()});
+addEventListener('contextmenu',e=>e.preventDefault());
+
+// ---------- Drawing ----------
+function drawSky(){
+  const gr=g.createLinearGradient(0,0,0,H);gr.addColorStop(0,'#4aa3e8');gr.addColorStop(1,'#bfe6fb');
+  g.fillStyle=gr;g.fillRect(-4000,-4000,W+8000,H+8000);
+  g.fillStyle='rgba(255,255,255,.85)';
+  [[150,100,1],[400,55,.7],[650,120,1.2],[800,50,.8]].forEach(c=>{g.beginPath();[[0,0,50],[45,10,40],[-45,12,36],[10,-18,36]].forEach(b=>{const x=c[0]+b[0]*c[2],y=c[1]+b[1]*c[2],r=b[2]*c[2];g.moveTo(x+r,y);g.arc(x,y,r,0,7)});g.fill()});
+  const lg=g.createLinearGradient(0,GY,0,GY+150*NS);lg.addColorStop(0,'#d9a05a');lg.addColorStop(.5,'#b57a3a');lg.addColorStop(1,'#7a4c22');
+  g.fillStyle=lg;g.beginPath();g.roundRect?g.roundRect(-4000,GY,LX+4000,150*NS,[0,34*NS,34*NS,0]):g.rect(-4000,GY,LX+4000,150*NS);g.fill();
+  g.fillStyle='rgba(255,230,170,.4)';g.fillRect(-4000,GY,LX+4000-30*NS,4*NS);
+  g.strokeStyle='rgba(70,36,10,.35)';g.lineWidth=2*NS;
+  for(let k=0;k<6;k++){g.beginPath();for(let x=-60;x<=LX-24*NS;x+=20){const y=GY+(18+k*22)*NS+Math.sin(x*.012+k*2)*4*NS;x==-60?g.moveTo(x,y):g.lineTo(x,y)}g.stroke()}
+  g.fillStyle='rgba(70,36,10,.45)';[[150,GY+50*NS],[420,GY+85*NS]].forEach(k=>{g.beginPath();g.ellipse(k[0],k[1],16*NS,9*NS,0,0,7);g.fill()});
 }
-function report(){
- const L=[],sec=(t,rows)=>{L.push('■ '+t);rows.forEach(([k,v])=>L.push(`${k}: ${v}`));L.push('');};
- L.push('## P2P接続テスト結果 '+new Date().toString(),'');
- L.push('■ 診断');diagnose().forEach(i=>L.push(`[${i.lv}] ${i.text}`));L.push('');
- sec('状態',statusRows());
- S.peers.forEach(P=>sec('相手: '+nm(P),peerRows(P)));
- if(S.srv)sec('STUN/TURN単体テスト',S.srv.map(r=>[r.url,r.txt]));
- sec('環境',envRows());
- L.push('■ ログ',...logs);
- return L.join('\n');
+function drawNail(n){
+  const top=GY-n.h;g.save();
+  g.fillStyle='#9ea3ad';g.fillRect(n.x-2.5*NS,GY-n.h*.5,5*NS,n.h*.5);
+  g.translate(n.x,GY-n.h*.5);g.rotate(n.bent*.45);
+  g.fillRect(-2.5*NS,-(n.h*.5),5*NS,n.h*.5+1);
+  g.fillStyle='#d6dae2';g.fillRect(-11*NS,-(n.h*.5),22*NS,4.5*NS);
+  g.restore();
 }
-async function copyReport(){
- const t=report();
- try{await navigator.clipboard.writeText(t);}catch(e){const a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();document.execCommand('copy');a.remove();}
- $('copy').textContent='コピーしました';setTimeout(()=>$('copy').textContent='結果をコピー',1500);
+function drawHammer(){
+  g.save();g.translate(hm.x,hm.y);g.rotate(hm.a);g.scale(S,S);
+  g.fillStyle='#8a5526';g.fillRect(-84,-8,471,16);
+  g.fillStyle='#b97a3a';g.fillRect(-84,-8,471,5);
+  const ir=g.createLinearGradient(-78,0,-102,0);ir.addColorStop(0,'#c3cad6');ir.addColorStop(1,'#6c7685');
+  g.fillStyle=ir;g.strokeStyle='#323946';g.lineWidth=2;g.lineJoin='round';
+  g.beginPath();g.moveTo(-78,-114);g.quadraticCurveTo(-120,0,-78,114);g.quadraticCurveTo(-84,0,-78,-114);g.closePath();g.fill();g.stroke();
+  g.fillStyle='#ffe27a';[-114,114].forEach(y=>{g.beginPath();g.arc(-78,y,3,0,7);g.fill()});
+  g.restore();
+  if(grab){
+    const c=Math.cos(hm.a),s=Math.sin(hm.a),gx=hm.x+c*grab[0]-s*grab[1],gy=hm.y+s*grab[0]+c*grab[1];
+    g.strokeStyle='rgba(255,255,255,.9)';g.lineWidth=3;g.setLineDash([8,8]);g.beginPath();g.moveTo(gx,gy);g.lineTo(mouse.x,mouse.y);g.stroke();g.setLineDash([]);
+    g.fillStyle='#fff';g.beginPath();g.arc(gx,gy,6,0,7);g.fill();
+    g.strokeStyle='#ffb02e';g.lineWidth=3;g.beginPath();g.arc(mouse.x,mouse.y,12,0,7);g.stroke();
+  }
 }
-$('go').onclick=start;
-$('again').onclick=async()=>{await stop();start();};
-$('srv').onclick=testServers;
-$('copy').onclick=copyReport;
-$('room').addEventListener('keydown',e=>{if(e.key==='Enter')start();});
-addEventListener('beforeunload',()=>{refs.forEach(f=>{try{f()}catch(e){}});});
+function text(s,x,y,size,col,al){g.font=`700 ${size}px "Trebuchet MS",system-ui,sans-serif`;g.textAlign=al||'left';g.lineWidth=5;g.strokeStyle='rgba(30,14,2,.85)';g.strokeText(s,x,y);g.fillStyle=col;g.fillText(s,x,y)}
+function render(){
+  g.setTransform(1,0,0,1,0,0);g.fillStyle='#1b1209';g.fillRect(0,0,cv.width,cv.height);
+  const shx=(Math.random()-.5)*shake*sc,shy=(Math.random()-.5)*shake*sc;g.setTransform(sc,0,0,sc,ox-VX0*sc+shx,oy-VY0*sc+shy);
+  g.save();
+  drawSky();nails.forEach(drawNail);drawHammer();
+  for(const p of parts){g.globalAlpha=Math.max(0,p.l*2);g.fillStyle=p.c;g.fillRect(p.x-2,p.y-2,4,4)}g.globalAlpha=1;
+  for(const q of texts){g.globalAlpha=Math.min(1,q.l*2);text(q.s,q.x,q.y-(1-q.l)*60,56,q.c,'center')}g.globalAlpha=1;
+  g.setTransform(sc/Z,0,0,sc/Z,ox+shx,oy+shy);
+  const left=nails.filter(n=>!n.done).length;
+  text(`${T.nails} ${nails.length-left}/${nails.length}`,24,90,30,'#fff');
+  text(`${T.time} ${t.toFixed(1)}s`,24,126,22,'#ffe0a8');
+  if((hint||frozen)&&state==='play')text(T.hint,W/2,150,34,'#fff','center');
+  g.restore();
+}
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(.033,(now-last)/1000);last=now;
+  if(state==='play'){if(!frozen)t+=dt;const n=Math.ceil(dt/DT);for(let i=0;i<n&&state==='play';i++)step(dt/n)}
+  for(const p of parts){p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=900*dt;p.l-=dt}parts=parts.filter(p=>p.l>0);
+  for(const q of texts)q.l-=dt;texts=texts.filter(q=>q.l>0);
+  shake*=.88;
+  render();requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
 </script>
-</body>
-</html>
+</body></html>
